@@ -2,6 +2,15 @@
 
 source "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/environment.sh";
 
+if ! isStateEnabled "components-downloaded" > /dev/null || ! isStateEnabled "components-patched" > /dev/null; then
+    "$AVR_TOOLS_BASEDIR"/get-sources.sh;
+fi
+
+if isStateEnabled "components-installed"; then
+    echo "AVR toolchain already installed at $AVR_TOOLS_ROOT";
+    exit;
+fi
+
 echo "Installing AVR toolchain to: $AVR_TOOLS_ROOT";
 
 mkdir -p "$AVR_TOOLS_ROOT" "$AVR_TOOLS_LIB" "$AVR_TOOLS_BIN" "$AVR_TOOLS_INCLUDE";
@@ -27,58 +36,52 @@ BINUTILS_LIBS_DIR="$AVR_TOOLS_ROOT/$BUILD_FOR/$TARGET";
 #fi
 
 
-if [ ! -f "$AVR_TOOLS_ROOT/.binutils-installed" ]; then
-    echo "Making binutils...";
-    cd "$BINUTILS_SRC";
+function configure-binutils() {
+   mkdir -p build;
+   cd ./build;
+   ../configure $CONFIG_GCC --target=$TARGET --enable-plugins --enable-shared --enable-host-shared --enable-lto --enable-install-libiberty;
+}
+
+function make-binutils() {
+    make -j8;
+}
+
+function make-install-binutils() {
+    make install;
+}
+
+function configure-gcc() {
     mkdir -p build;
     cd ./build;
-    CC=gcc-6 ../configure $CONFIG_GCC --target=$TARGET --enable-plugins --enable-shared --enable-host-shared --enable-lto --enable-install-libiberty;
-    make -j8;
-    make install;
-    cd "$AVR_TOOLS_BASEDIR";
-    echo "Done making binutils.";
-    touch "$AVR_TOOLS_ROOT/.binutils-installed";
-else
-    echo "binutils already built.";
-fi
+    ../configure $CONFIG_GCC --target=$TARGET --with-dwarf2 --with-gnu-as --with-gnu-ld --with-ld="$AVR_TOOLS_BIN/avr-ld" \
+                             --with-as="$AVR_TOOLS_BIN/avr-as" --disable-threads --disable-libssp --disable-libstdcxx-pch \
+                             --disable-libgomp --with-gmp=/usr/local/opt/gmp --with-mpfr=/usr/local/opt/mpfr \
+                             --with-mpc=/usr/local/opt/libmpc;
+}
 
-if [ ! -f "$AVR_TOOLS_ROOT/.gcc-installed" ]; then
-    echo "Making gcc...";
-    cd "$GCC_SRC";
+function make-gcc() {
+    make -j8;
+}
+
+function make-install-gcc() {
+    make install;
+}
+
+function configure-avr-libc() {
     mkdir -p build;
     cd ./build;
-    CC=gcc-6 ../configure $CONFIG_GCC --target=$TARGET --with-dwarf2 --with-gnu-as --with-gnu-ld --with-ld="$AVR_TOOLS_BIN/avr-ld" \
-        --with-as="$AVR_TOOLS_BIN/avr-as" --disable-threads --disable-libssp --disable-libstdcxx-pch \
-        --disable-libgomp --with-gmp=/usr/local/opt/gmp --with-mpfr=/usr/local/opt/mpfr --with-mpc=/usr/local/opt/libmpc;
-    make -j8;
-    make install;
-    cd "$AVR_TOOLS_BASEDIR";
-    echo "Done making gcc.";
-    touch "$AVR_TOOLS_ROOT/.gcc-installed";
-else
-    echo "gcc already built.";
-fi
+    CC= ../configure $CONFIG_COMMON --build="$(./config.guess)" --host="$TARGET" --enable-device-lib;
+}
 
-if [ ! -f "$AVR_TOOLS_ROOT/.avr-libc-installed" ]; then
-    echo "Making avr-libc...";
-    cd "$AVR_LIBC_SRC";
-    mkdir -p build;
-    cd ./build;
-    ../configure $CONFIG_COMMON --build="$(./config.guess)" --host="$TARGET" --enable-device-lib;
-    make -j8;
-    make install;
-    cd "$AVR_TOOLS_BASEDIR";
-    echo "Done making avr-libc.";
-    touch "$AVR_TOOLS_ROOT/.avr-libc-installed";
-else
-    echo "avr-libc already built.";
-fi
+function make-avr-libc() {
+    CC= make -j8;
+}
 
+function make-install-avr-libc() {
+    CC= make install;
+}
 
-if [ ! -f "$AVR_TOOLS_ROOT/.simulavr-installed" ]; then
-    echo "Making simulavr...";
-    cd "$SIMULAVR_SRC";
-
+function configure-simulavr() {
     # Bootstrap is required for simulavr
     ./bootstrap
 
@@ -94,11 +97,37 @@ if [ ! -f "$AVR_TOOLS_ROOT/.simulavr-installed" ]; then
         --enable-tcl \
         --enable-verilog \
         --enable-python;
+}
+
+function make-simulavr() {
     AVR_GCC="$AVR_GCC $AVR_CFLAGS $AVR_LDFLAGS" make -j8;
+
+}
+
+function make-install-simulavr() {
     AVR_GCC="$AVR_GCC $AVR_CFLAGS $AVR_LDFLAGS" make install;
-    cd "$AVR_TOOLS_SRCDIR";
-    echo "Done making simulavr.";
-    touch "$AVR_TOOLS_ROOT/.simulavr-installed";
-else
-    echo "simulavr already built.";
-fi
+}
+
+function installComponent() {
+    if isStateEnabled "$1-installed"; then
+        echo "$1 is already installed.";
+        return 0;
+    fi;
+    echo "Configuring $1...";
+    cd "$AVR_TOOLS_SRCDIR/$1";
+    configure-$1;
+    echo "Building $1...";
+    make-$1;
+    echo "Installing $1...";
+    make-install-$1;
+    echo "$1 installed successfully.";
+    setStateVal "$1-installed" "true";
+    cd "$AVR_TOOLS_BASEDIR";
+}
+
+for component in binutils gcc avr-libc simulavr; do
+    installComponent "$component";
+done;
+
+echo "Installation complete.";
+setStateVal "components-installed" "true";

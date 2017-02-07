@@ -89,15 +89,12 @@ function isStateEnabled() {
     local VALUE="$(getStateVal "$KEY")";
     case "$VALUE" in
         true)
-            echo -n "true";
             return 0;
             ;;
         false)
-            echo -n "false";
             return 1;
             ;;
         *)
-            echo -n "$DEFAULT";
             if [ "$DEFAULT" = "true" ]; then
                 return 0;
             else
