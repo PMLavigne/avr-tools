@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -e
 
 source "$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )/environment.sh";
 
@@ -13,45 +13,70 @@ AVR_LIBC_URL="http://download.savannah.gnu.org/releases/avr-libc/avr-libc-$AVR_L
 
 
 function downloadComponent() {
-    if [ -d "$AVR_TOOLS_SRCDIR/$1" ]; then
+    if isStateEnabled "$1-downloaded" > /dev/null; then
         echo "Already have $1, skipping";
-    else
-        echo "Downloading $1 v$2";
-        mkdir -p "$AVR_TOOLS_SRCDIR/$1";
-        curl "$3" | tar xj -C "$AVR_TOOLS_SRCDIR/$1" --strip-components 1;
-        echo "Done downloading $1 v$2";
+        return 0;
     fi
+
+    echo "Downloading $1 v$2 from $3";
+    mkdir -p "$AVR_TOOLS_SRCDIR/$1";
+    $DOWNLOAD_UTIL "$3" | tar xj -C "$AVR_TOOLS_SRCDIR/$1" --strip-components 1;
+    echo "Done downloading $1 v$2";
+    setStateVal "$1-downloaded" "true";
 }
 
 function patchComponent() {
-    for patch in "$AVR_TOOLS_PATCHDIR/$1/*.patch"; do
-        echo "Applying $patch to $1";
-        cd "$AVR_TOOLS_SRCDIR/$1";
-        patch -p1 < "$patch";
-        cd "$AVR_TOOLS_BASEDIR";
-    done;
+    if isStateEnabled "$1-patched" > /dev/null; then
+        echo "$1 has already been patched, skipping";
+        return 0;
+    fi
 
-    for patch in "$AVR_TOOLS_PATCHDIR/$1/*.gitpatch"; do
-        echo "Applying git patch $patch to $1";
-        cd "$AVR_TOOLS_SRCDIR/$1";
-        git apply "$patch";
-        cd "$AVR_TOOLS_BASEDIR";
-    done;
+    if compgen -G "$AVR_TOOLS_PATCHDIR/$1/*.patch" > /dev/null; then
+        for patch in "$AVR_TOOLS_PATCHDIR/$1/"*.patch; do
+            echo "Applying $patch to $1";
+            cd "$AVR_TOOLS_SRCDIR/$1";
+            patch -p1 < "$patch";
+            cd "$AVR_TOOLS_BASEDIR";
+        done;
+    fi
+
+    if compgen -G "$AVR_TOOLS_PATCHDIR/$1/*.gitpatch" > /dev/null; then
+        for patch in "$AVR_TOOLS_PATCHDIR/$1/"*.gitpatch; do
+            echo "Applying git patch $patch to $1";
+            cd "$AVR_TOOLS_SRCDIR/$1";
+            git apply "$patch";
+            cd "$AVR_TOOLS_BASEDIR";
+        done;
+    fi
+
+    setStateVal "$1-patched" "true";
 }
 
-echo "Downloading AVR Toolchain sources to $AVR_TOOLS_SRCDIR...";
+if isStateEnabled "components-downloaded" > /dev/null; then
+    echo "AVR Toolchain sources already downloaded.";
+else
+    echo "Downloading AVR Toolchain sources to $AVR_TOOLS_SRCDIR...";
 
-downloadComponent "binutils" "$BINUTILS_VERSION" "$BINUTILS_URL";
-downloadComponent "gcc" "$GCC_VERSION" "$GCC_URL";
-downloadComponent "avr-libc" "$AVR_LIBC_VERSION" "$AVR_LIBC_URL";
+    downloadComponent "binutils" "$BINUTILS_VERSION" "$BINUTILS_URL";
+    downloadComponent "gcc" "$GCC_VERSION" "$GCC_URL";
+    downloadComponent "avr-libc" "$AVR_LIBC_VERSION" "$AVR_LIBC_URL";
 
-echo "Updating git submodules..."
-git submodule init && git submodule update;
+    echo "Updating git submodules..."
+    git submodule init && git submodule update;
 
-echo "Applying patches..."
+    echo "Done downloading sources.";
+    setStateVal "components-downloaded" "true";
+fi
 
-for component in 'binutils' 'gcc' 'avr-libc' 'simulavr'; do
-    patchComponent "$component";
-done
+if isStateEnabled "components-patched" > /dev/null; then
+    echo "AVR Toolchain sources already patched.";
+else
+    echo "Applying patches..."
 
-echo "Done.";
+    for component in 'binutils' 'gcc' 'avr-libc' 'simulavr'; do
+        patchComponent "$component";
+    done
+
+    echo "Done applying patches.";
+    setStateVal "components-patched" "true";
+fi
