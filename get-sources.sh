@@ -11,6 +11,8 @@ GCC_URL="http://mirrors.concertpass.com/gcc/releases/gcc-$GCC_VERSION/gcc-$GCC_V
 AVR_LIBC_VERSION="2.0.0";
 AVR_LIBC_URL="http://download.savannah.gnu.org/releases/avr-libc/avr-libc-$AVR_LIBC_VERSION.tar.bz2";
 
+GDB_VERSION="7.12";
+GDB_URL="http://ftp.gnu.org/gnu/gdb/gdb-$GDB_VERSION.tar.xz";
 
 function downloadComponent() {
     if isStateEnabled "$1-downloaded" > /dev/null; then
@@ -18,9 +20,22 @@ function downloadComponent() {
         return 0;
     fi
 
+    local EXTENSION="$(basename "$3" | "$SED" -rn 's/^.+\.([^.]+?)$/\1/pg')";
+    case "$EXTENSION" in
+       txz|xz)
+           local TARFLAG="-J";
+           ;;
+       tbz|bz2)
+           local TARFLAG="-j";
+           ;;
+       *)
+           local TARFLAG="-z";
+           ;;
+    esac
+
     echo "Downloading $1 v$2 from $3";
     mkdir -p "$AVR_TOOLS_SRCDIR/$1";
-    $DOWNLOAD_UTIL "$3" | tar xj -C "$AVR_TOOLS_SRCDIR/$1" --strip-components 1;
+    $DOWNLOAD_UTIL "$3" | tar -x $TARFLAG -C "$AVR_TOOLS_SRCDIR/$1" --strip-components 1;
     echo "Done downloading $1 v$2";
     setStateVal "$1-downloaded" "true";
 }
@@ -60,6 +75,7 @@ else
     downloadComponent "binutils" "$BINUTILS_VERSION" "$BINUTILS_URL";
     downloadComponent "gcc" "$GCC_VERSION" "$GCC_URL";
     downloadComponent "avr-libc" "$AVR_LIBC_VERSION" "$AVR_LIBC_URL";
+    downloadComponent "gdb" "$GDB_VERSION" "$GDB_URL";
 
     echo "Updating git submodules..."
     git submodule init && git submodule update;
@@ -73,7 +89,7 @@ if isStateEnabled "components-patched" > /dev/null; then
 else
     echo "Applying patches..."
 
-    for component in 'binutils' 'gcc' 'avr-libc' 'simulavr'; do
+    for component in 'binutils' 'gcc' 'avr-libc' 'simulavr' 'gdb'; do
         patchComponent "$component";
     done
 

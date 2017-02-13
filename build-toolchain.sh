@@ -55,7 +55,7 @@ function configure-gcc() {
     cd ./build;
     ../configure $CONFIG_GCC --target=$TARGET --with-dwarf2 --with-gnu-as --with-gnu-ld --with-ld="$AVR_TOOLS_BIN/avr-ld" \
                              --with-as="$AVR_TOOLS_BIN/avr-as" --disable-threads --disable-libssp --disable-libstdcxx-pch \
-                             --disable-libgomp --with-gmp=/usr/local/opt/gmp --with-mpfr=/usr/local/opt/mpfr \
+                             --disable-libgomp --with-gmp=/usr/local/opt/gmp --with-mpfr=/usr/local/opt/mpfr --enable-lto \
                              --with-mpc=/usr/local/opt/libmpc;
 }
 
@@ -108,6 +108,22 @@ function make-install-simulavr() {
     AVR_GCC="$AVR_GCC $AVR_CFLAGS $AVR_LDFLAGS" make install;
 }
 
+function configure-gdb() {
+    mkdir -p build;
+    cd build;
+    ../configure $CONFIG_GCC --target=$TARGET --with-dwarf2 --with-gnu-as --with-gnu-ld --with-ld="$AVR_TOOLS_BIN/avr-ld" \
+                             --with-as="$AVR_TOOLS_BIN/avr-as" --with-gmp=/usr/local/opt/gmp --with-mpfr=/usr/local/opt/mpfr \
+                             --with-mpc=/usr/local/opt/libmpc --with-build-time-tools="$AVR_TOOLS_BIN";
+}
+
+function make-gdb() {
+    make -j8;
+}
+
+function make-install-gdb() {
+    make install;
+}
+
 function installComponent() {
     if isStateEnabled "$1-installed"; then
         echo "$1 is already installed.";
@@ -125,7 +141,7 @@ function installComponent() {
     cd "$AVR_TOOLS_BASEDIR";
 }
 
-for component in binutils gcc avr-libc simulavr; do
+for component in 'binutils' 'gcc' 'avr-libc' 'simulavr' 'gdb'; do
     installComponent "$component";
 done;
 
